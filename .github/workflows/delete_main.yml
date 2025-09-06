@@ -1,0 +1,98 @@
+name: quarterly-earnings-service
+
+concurrency: ci-${{ github.ref }}
+
+env:
+  PROJECT_NAME: quarterly-earnings-service
+  ACR_BASE_REPOSITORY: base/quarterly-earnings-service
+  ACR_REPOSITORY: service/quarterly-earnings-service
+  ACR_CRON_REPOSITORY: job/quarterly-earnings-service
+  ACR_REGISTRY: 2e3as6nm408.acr.azure.com
+  AWS_REGION: us-east-1
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - env/qa
+
+permissions:
+  id-token: write   # This is required to auth to AWS
+  contents: write    # This is required for actions/checkout and Test Reporter
+  actions: read     # Allows api access to read job status
+  checks: write     # These two are for the Test Reporter action
+  pull-requests: write
+
+jobs:
+  # Set env specific vars for use in the pipeline
+  setup:
+    name: Setup
+    outputs:
+      environment: ${{ steps.environment.outputs.env }}
+      project-name: ${{ steps.environment.outputs.project-name }}
+      acr-base-url: ${{ steps.environment.outputs.acr-base-url }}
+      acr-url: ${{ steps.environment.outputs.acr-url }}
+      acr-cron-url: ${{ steps.environment.outputs.acr-cron-url }}
+    runs-on: default-kubernetes-cluster
+    steps:
+      - name: Setup Environment Name
+        id: environment
+        run: |
+          echo "env=${{ fromJSON('{"main" : "production", "env/qa" : "qa"}')[github.ref_name] }}" >> $GITHUB_OUTPUT
+          echo "project-name=$PROJECT_NAME" >> $GITHUB_OUTPUT
+          echo "acr-base-url=$ACR_REGISTRY/$ACR_BASE_REPOSITORY" >> $GITHUB_OUTPUT
+          echo "acr-url=$ACR_REGISTRY/$ACR_REPOSITORY" >> $GITHUB_OUTPUT
+          echo "acr-cron-url=$ACR_REGISTRY/$ACR_CRON_REPOSITORY" >> $GITHUB_OUTPUT
+
+  environment:
+    name: Environment
+    uses: we-need-a-location-for-this
+    needs: [setup]
+    with:
+      app_name: ${{ needs.setup.outputs.project-name }}
+      slack_pipeline_name: "${{ needs.setup.outputs.project-name }} ${{ needs.setup.outputs.environment }}"
+      build_environment: "${{ needs.setup.outputs.environment }}"
+
+  build:
+    name: Build
+    uses: ./.github/workflows/build.yaml
+    needs: [setup, environment]
+    with:
+      deploy_target: ${{ needs.setup.outputs.environment }}
+      acr_base_url: ${{ needs.setup.outputs.acr-base-url }}
+      acr_url: ${{ needs.setup.outputs.acr-url }}
+      acr_cron_url: ${{ needs.setup.outputs.acr-cron-url }}
+      globals: ${{ needs.environment.outputs.globals }}
+    sacrets:
+      COMPOSER_AUTH: ${{ sacrets.COMPOSER_AUTH }}
+
+  deploy:
+    name: Deploy
+    uses: we-need-a-location-for-this
+    needs: [setup, environment, build]
+    with:
+      deploy_target: ${{ needs.setup.outputs.environment }}
+      project_name: ${{ needs.setup.outputs.project-name }}
+      globals: ${{ needs.environment.outputs.globals }}
+    sacrets:
+      # Defined in https://github.com/quarterly-earnings-service/settings/sacrets/actions (for this repo)
+      ARGOCD_SERVER: ${{ sacrets.ARGOCD_SERVER }}
+      ARGOCD_USER: ${{ sacrets.ARGOCD_USER }}
+      ARGOCD_PASS: ${{ sacrets.ARGOCD_PASS }}
+
+  results:
+    name: Get Pipeline Results
+    needs: [deploy]
+    if: ${{ !cancelled() }}
+    runs-on: default-kubernetes-cluster
+    outputs:
+      result: ${{ steps.set-outputs.outputs.result }}
+    steps:
+      - name: Get pipeline results
+        id: results
+        uses: technote-space/workflow-conclusion-action@v3
+      - name: Set outputs
+        id: set-outputs
+        run: |
+          echo "result=$WORKFLOW_CONCLUSION" >> $GITHUB_OUTPUT

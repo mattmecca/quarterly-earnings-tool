@@ -1,0 +1,121 @@
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-transform
+spec:
+  storageClassName: local-path
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10M
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-load
+spec:
+  storageClassName: local-path
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10M
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-extract
+spec:
+  terminationGracePeriodSeconds: 2
+  containers:
+  - name: extract
+    image: extract:v1
+    command:
+    - cp
+    - /yellow_tripdata_2024-01.partial.csv
+    - /extract
+    volumeMounts:
+    - name: pv-extract
+      mountPath: /extract
+  restartPolicy: Never
+  volumes:
+  - name: pv-extract
+    persistentVolumeClaim:
+      claimName: pvc-extract
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-transform
+spec:
+  terminationGracePeriodSeconds: 2
+  containers:
+  - name: transform
+    image: transform:v1
+    command: ['sh', '-c', 'sqlite3 /transform/transform.sqlite < transform.sql']
+    volumeMounts:
+    - name: pv-extract
+      mountPath: /extract
+    - name: pv-transform
+      mountPath: /transform
+  restartPolicy: Never
+  volumes:
+  - name: pv-extract
+    persistentVolumeClaim:
+      claimName: pvc-extract
+  - name: pv-transform
+    persistentVolumeClaim:
+      claimName: pvc-transform
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-load
+spec:
+  terminationGracePeriodSeconds: 2
+  containers:
+  - name: load
+    image: load:v1
+    command: ['sh', '-c', 'sqlite3 /transform/transform.sqlite < load.sql']
+    volumeMounts:
+    - name: pv-transform
+      mountPath: /transform
+    - name: pv-load
+      mountPath: /load
+  restartPolicy: Never
+  volumes:
+  - name: pv-transform
+    persistentVolumeClaim:
+      claimName: pvc-transform
+  - name: pv-load
+    persistentVolumeClaim:
+      claimName: pvc-load
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-list-files
+spec:
+  terminationGracePeriodSeconds: 2
+  containers:
+  - name: list-files
+    image: alpine
+    command: ['sh', '-c', 'ls -l /extract /transform /load']
+    #command:
+    #- sleep
+    #- "3600"
+    volumeMounts:
+    - name: pv-extract
+      mountPath: /extract
+    - name: pv-transform
+      mountPath: /transform
+    - name: pv-load
+      mountPath: /load
+  restartPolicy: Never
+  volumes:
+  - name: pv-extract
+    persistentVolumeClaim:
+      claimName: pvc-extract
+  - name: pv-transform
+    persistentVolumeClaim:
+      claimName: pvc-transform
+  - name: pv-load
+    persistentVolumeClaim:
+      claimName: pvc-load

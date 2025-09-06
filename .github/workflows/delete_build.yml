@@ -1,0 +1,80 @@
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        description: "Name of the environment you're deploying to"
+        required: true
+      acr_base_url:
+        type: string
+        description: "URL for ACR base repo"
+        required: true
+      acr_url:
+        type: string
+        description: "URL for ACR repo"
+        required: true
+      acr_cron_url:
+        type: string
+        description: "URL for ACR cron repo"
+        required: true
+      globals:
+        type: string
+        description: "The global environment variables represented as a JSON object."
+        required: true
+      push:
+        type: string
+        description: "Push the docker image or not"
+        default: true
+    sacrets:
+      QUARTERLY_EARNINGS_COMPOSER_AUTH:
+        description: "Composer Auth Token"
+        required: true
+
+jobs:
+  build:
+    name: Build and Push to ACR
+    runs-on: default-kubernetes-cluster
+
+    steps:
+    - name: Check out code
+      id: checkout
+      uses: actions/checkout@v3
+
+    - run: docker context create builders
+
+    - run: docker context use builders
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+      with:
+        platforms: linux/amd64,linux/arm64
+        version: latest
+        endpoint: builders
+
+    - name: Build and push App image
+      uses: docker/build-push-action@v3
+      with:
+        platforms: linux/amd64
+        # You must specify context or it'll redo the git pull
+        context: .
+        file: ".devops/docker/App.Dockerfile"
+        build-args: 'COMPOSER_AUTH=${{ sacrets.COMPOSER_AUTH }}'
+        cache-from: type=gha,scope=build-${{ inputs.environment }}
+        cache-to: type=gha,mode=max,scope=build-${{ inputs.environment }}
+        push: ${{ inputs.push }}
+        tags: ${{ inputs.acr_url }}:${{ inputs.environment }}-${{ fromJSON(inputs.globals).build_number }}
+
+    - name: Build and push cron image
+      uses: docker/build-push-action@v3
+      with:
+        platforms: linux/amd64
+        # You must specify context or it'll redo the git pull
+        context: .
+        file: ".devops/docker/Batch.Dockerfile"
+        build-args: 'COMPOSER_AUTH=${{ sacrets.COMPOSER_AUTH }}'
+        cache-from: type=gha,scope=build-${{ inputs.environment }}
+        cache-to: type=gha,mode=max,scope=build-${{ inputs.environment }}
+        push: ${{ inputs.push }}
+        tags: ${{ inputs.acr_cron_url }}:${{ inputs.environment }}-${{ fromJSON(inputs.globals).build_number }}

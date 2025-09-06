@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployments # The 'Deployments' nomenclature indicates a stateless app
+metadata:
+  name: quarterly-earnings-service # Deployment name
+  labels:
+    app: quarterly-earnings-tool # A label for the application
+spec: # Defines the DETAILS of our deployment
+  replicas: 3 # Number of initial replicas
+  selector: # Used to define how pods will be managed
+    matchLabels:
+      app: quarterly-earnings-tool # Matches the label above
+ strategy:
+    type: RollingUpdate
+ template: # Defines how new pods are created
+    metadata:
+       labels:
+        app: quarterly-earnings-service-pods # Label given to each pod
+    spec:
+      containers:
+        —name: quarterly-earnings-predictor # Container name
+          image: quarterly-earnings-predictor # Image to be used
+          ports:
+            —containerPort: 80 # Ports for networking
+        —name: quarterly-earnings-dashboard # Container name
+          image: quarterly-earnings-dashboard # Image to be used
+          ports:
+            —containerPort: 80 # Ports for networking

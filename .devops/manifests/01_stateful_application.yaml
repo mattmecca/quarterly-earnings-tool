@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: quarterly-earnings-data-processing-service # Deployment name
+  labels:
+    app: quarterly-earnings-data-processing # A label for the application
+spec: # Defines the DETAILS of our deployment
+  replicas: 3 # Number of initial replicas
+  selector: # Used to define how pods will be managed
+    environment: prod
+    matchLabels:
+      app: quarterly-earnings-data-processing # Matches the label above
+ strategy:
+    type: RollingUpdate
+ template: # Defines how new pods are created
+    metadata:
+       labels:
+        app: quarterly-earnings-data-processing-pods # Label given to each pod
+    spec:
+      containers:
+        —name: quarterly-earnings-data-collection # Container name
+          image: quarterly-earnings-data-collection # Image to be used
+          ports:
+            —containerPort: 80 # Ports for networking
+    spec:
+      containers:
+        —name: quarterly-earnings-data-storage # Container name
+          image: quarterly-earnings-data-storage # Image to be used
+          ports:
+            —containerPort: 80 # Ports for networking
