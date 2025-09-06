@@ -7,7 +7,7 @@ on:
     branches:
       - production
     paths:  
-      - terraform/** # INDICATES EVERYTHING INSIDE TERRAFORM FOLDER IS WHAT WE WANT TO WORK ON
+      - terraform/** # INDICATES EVERYTHING INSIDE TERRAFORM FOLDER IS WHAT WE WANT TO WORK WITH
   workflow_dispatch: # Enables manual trigger for destroy job
 
 # Environment Variables
@@ -116,7 +116,7 @@ jobs:
       # Also want to EMPTY ECR REPO of STORED IMAGES **BEFORE** IT IS DELETED
       - name: Empty ECR Repository
         run: |
-          REPOSITORY_NAME=${{ vars.ECR_REPO }}
+          REPOSITORY_NAME=${{ vars.ECR_REPOSITORY }}
           IMAGES=$(aws ecr list-images --repository-name $REPOSITORY_NAME --query 'imageIds[*]' --output json)
           if [[ "$IMAGES" != "[]" ]]; then
             echo "Deleting images from $REPOSITORY_NAME..."

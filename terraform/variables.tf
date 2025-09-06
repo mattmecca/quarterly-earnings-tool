@@ -5,7 +5,7 @@ variable "aws_region" {
 }
 
 variable "name" {
-  default = "githubactions-eks"
+  default = "quarterly-earnings-tool-eks"
 }
 
 # Repository name in Elastic Container Repository (ECR)
