@@ -5,7 +5,7 @@ name: "quarterly-earnings-tool-infra"
 on:
   push:
     branches:
-      - infra_trigger_branch
+      - production
     paths:  
       - terraform/** # INDICATES EVERYTHING INSIDE TERRAFORM FOLDER IS WHAT WE WANT TO WORK WITH
   workflow_dispatch: # Enables manual trigger for destroy job
