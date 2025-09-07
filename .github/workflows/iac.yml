@@ -1,8 +1,6 @@
 # Workflow Name
 name: quarterly-earnings-tool-iac
-
-# Workflow Triggers
-on:
+on: # Workflow Triggers
   push:
     branches:
       - production
