@@ -14,7 +14,7 @@ variable "ecr_repository" {
 }
 
 variable "k8s_version" {
-  default = "1.31"
+  default = "1.32"
 }
 
 # VPC uses CIDR IP addresses when transfering data packets bw connected devices
