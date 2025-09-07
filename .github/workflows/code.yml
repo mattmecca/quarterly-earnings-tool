@@ -1,4 +1,4 @@
-name: webapp-actions
+name: quarterly-earnings-tool-code
 on:
   push:
     branches:
