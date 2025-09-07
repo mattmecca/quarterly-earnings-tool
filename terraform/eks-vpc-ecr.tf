@@ -87,13 +87,13 @@ module "ecr" {
   source  = "terraform-aws-modules/ecr/aws"
   version = "2.3.0"
 
-  repository_name    = var.ecr_repo
+  repository_name    = var.ecr_repository
   registry_scan_type = "BASIC"
   repository_type    = "private"
 
   create_lifecycle_policy = false
   repository_image_tag_mutability = "MUTABLE" # Allows us to overwrite the IMAGE NAME / TAG
-  
+
   tags = {
     Terraform = "true"
   }
