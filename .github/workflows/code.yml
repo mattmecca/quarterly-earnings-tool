@@ -2,7 +2,7 @@ name: quarterly-earnings-tool-code
 on:
   push:
     branches:
-        - production
+        #- production
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
   ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}

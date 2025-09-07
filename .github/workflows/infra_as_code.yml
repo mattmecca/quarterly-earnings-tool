@@ -1,5 +1,5 @@
 # Workflow Name
-name: "quarterly-earnings-tool-infra"
+name: quarterly-earnings-tool-infra
 
 # Workflow Triggers
 on:
