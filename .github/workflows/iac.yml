@@ -11,7 +11,16 @@ name: quarterly-earnings-tool-infra
 #   workflow_dispatch: # Enables manual trigger for destroy job
 # Workflow Triggers
 on:
-  workflow_dispatch: # Can only trigger both workflows manually
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform: terraform create or destroy'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+          - apply
+          - destroy
 
 # Environment Variables
 env:
@@ -27,7 +36,7 @@ jobs:
     name: "Deploy Infra with Terraform on AWS"
     runs-on: ubuntu-latest
     # Run only on push events
-    if: github.event_name == 'push'  
+    if: github.event.inputs.action == 'apply' # github.event_name == 'push'  
 
     defaults:
       run:
