@@ -9,7 +9,7 @@ variable "name" {
 }
 
 # Repository name in Elastic Container Repository (ECR)
-variable "ecr_repo" {
+variable "ecr_repository" {
   default = "quarterly-earnings-tool"
 }
 
