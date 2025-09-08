@@ -88,10 +88,29 @@ jobs:
         run: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.13.2/deploy/static/provider/aws/deploy.yaml
         # Above command can be found here https://kubernetes.github.io/ingress-nginx/deploy/#aws
         # NEEDED TO CHANGE controller-v1.12.0-beta.0 to controller-v1.13.2
+
+      - name: Delete Ingress controller
+        if: failure()
+        run: |
+          kubectl delete -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.13.2/deploy/static/provider/aws/deploy.yaml
+
+      - name: Empty ECR Repository
+        if: failure()
+        run: |
+          REPOSITORY_NAME=${{ vars.ECR_REPOSITORY }}
+          IMAGES=$(aws ecr list-images --repository-name $REPOSITORY_NAME --query 'imageIds[*]' --output json)
+          if [[ "$IMAGES" != "[]" ]]; then
+            echo "Deleting images from $REPOSITORY_NAME..."
+            aws ecr batch-delete-image --repository-name $REPOSITORY_NAME --image-ids "$IMAGES"
+          else
+            echo "No images found in $REPOSITORY_NAME."
+          fi
+
       - name: Run Terraform destroy
         if: failure()
         run: |
           terraform destroy -auto-approve -input=false
+
 
   # The below DELETE COMMAND needs to be triggered MANUALLY
   destroy:
@@ -126,6 +145,7 @@ jobs:
       - name: Get Kubernetes config
         id: getconfig
         run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }} 
+      
       # NEED to delete INGRESS CONTROLLER LOAD BALANCER **BEFORE** DELETING KUBERNETES CLUSTER
       - name: Delete Ingress controller
         run: kubectl delete -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.13.2/deploy/static/provider/aws/deploy.yaml
@@ -141,6 +161,7 @@ jobs:
           else
             echo "No images found in $REPOSITORY_NAME."
           fi
+
       # FINALLY, we execute `terraform destroy ...` command
       - name: Terraform destroy
         id: destroy
