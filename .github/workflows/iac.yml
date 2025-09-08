@@ -33,7 +33,7 @@ env:
 # Define Jobs
 jobs:
   terraform:
-    name: "Deploy Infra with Terraform on AWS"
+    name: "Create Infra with Terraform on AWS"
     runs-on: ubuntu-latest
     # Run only on push events
     if: github.event.inputs.action == 'apply' # github.event_name == 'push'  
@@ -88,7 +88,11 @@ jobs:
         run: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.13.2/deploy/static/provider/aws/deploy.yaml
         # Above command can be found here https://kubernetes.github.io/ingress-nginx/deploy/#aws
         # NEEDED TO CHANGE controller-v1.12.0-beta.0 to controller-v1.13.2
-  
+      - name: Run Terraform destroy
+        if: failure()
+        run: |
+          terraform destroy -auto-approve -input=false
+
   # The below DELETE COMMAND needs to be triggered MANUALLY
   destroy:
     name: "Destroy Infra on AWS"
