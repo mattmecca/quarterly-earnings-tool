@@ -19,8 +19,8 @@ on:
         default: 'apply'
         type: choice
         options:
-          - apply
-          - destroy
+          - 'apply'
+          - 'destroy'
 
 # Environment Variables
 env:
@@ -89,6 +89,81 @@ jobs:
         # Above command can be found here https://kubernetes.github.io/ingress-nginx/deploy/#aws
         # NEEDED TO CHANGE controller-v1.12.0-beta.0 to controller-v1.13.2
 
+      - name: Install ArgoCD
+        if: steps.apply.outcome == 'success' && steps.getconfig.outcome == 'success'
+        run: |
+          # Create argocd namespace
+          kubectl create namespace argocd
+          # Install ArgoCD
+          kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+          # Wait for ArgoCD to be ready
+          kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+          
+          # Create Ingress for ArgoCD
+          cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: argocd-server-ingress
+            namespace: argocd
+            annotations:
+              kubernetes.io/ingress.class: nginx
+              nginx.ingress.kubernetes.io/ssl-redirect: "true"
+              nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+              nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
+          spec:
+            rules:
+            - host: argocd.${{ env.EKS_CLUSTER }}.local  # You can customize this domain
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: argocd-server
+                      port:
+                        number: 443
+          EOF
+          
+          # Wait for Ingress to get an external IP
+          echo "Waiting for Ingress to get external IP..."
+          kubectl wait --for=jsonpath='{.status.loadBalancer.ingress}' ingress/argocd-server-ingress -n argocd --timeout=300s
+          
+          # Get external access information
+          EXTERNAL_IP=$(kubectl get ingress argocd-server-ingress -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          echo "ArgoCD is accessible at: https://$EXTERNAL_IP"
+          echo "ArgoCD admin password:"
+          kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+          echo ""
+
+      # - name: Setup Route53 DNS for ArgoCD (Optional)
+      #   if: steps.apply.outcome == 'success' && steps.getconfig.outcome == 'success'
+      #   run: |
+      #     # Get the load balancer hostname
+      #     LB_HOSTNAME=$(kubectl get ingress argocd-server-ingress -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          
+      #     # Create Route53 record (requires HOSTED_ZONE_ID environment variable)
+      #     if [ ! -z "${{ vars.HOSTED_ZONE_ID }}" ]; then
+      #       aws route53 change-resource-record-sets --hosted-zone-id ${{ vars.HOSTED_ZONE_ID }} --change-batch '{
+      #         "Changes": [{
+      #           "Action": "UPSERT",
+      #           "ResourceRecordSet": {
+      #             "Name": "argocd.${{ vars.DOMAIN_NAME }}",
+      #             "Type": "CNAME",
+      #             "TTL": 300,
+      #             "ResourceRecords": [{"Value": "'$LB_HOSTNAME'"}]
+      #           }
+      #         }]
+      #       }'
+      #       echo "ArgoCD will be accessible at: https://argocd.${{ vars.DOMAIN_NAME }}"
+      #     fi
+
+      - name: Delete ArgoCD
+        if: failure()
+        run: |
+          kubectl delete ingress argocd-server-ingress -n argocd --ignore-not-found=true
+          kubectl delete namespace argocd --ignore-not-found=true
+
       - name: Delete Ingress controller
         if: failure()
         run: |
@@ -101,10 +176,14 @@ jobs:
           IMAGES=$(aws ecr list-images --repository-name $REPOSITORY_NAME --query 'imageIds[*]' --output json)
           if [[ "$IMAGES" != "[]" ]]; then
             echo "Deleting images from $REPOSITORY_NAME..."
-            aws ecr batch-delete-image --repository-name $REPOSITORY_NAME --image-ids "$IMAGES" --force
+            aws ecr batch-delete-image --repository-name $REPOSITORY_NAME --image-ids "$IMAGES"
           else
             echo "No images found in $REPOSITORY_NAME."
           fi
+
+        # aws ecr batch-delete-image --repository-name $REPOSITORY_NAME \
+        #     --image-ids "$(aws ecr list-images --repository-name $REPOSITORY_NAME --query 'imageIds[*]' --output json
+        # )" || true
 
       - name: Run Terraform destroy
         if: failure()
@@ -117,7 +196,7 @@ jobs:
     name: "Destroy Infra on AWS"
     runs-on: ubuntu-latest
     # Only trigger for workflow_dispatch
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event.inputs.action == 'destroy'
 
     defaults:
       run:
@@ -146,6 +225,11 @@ jobs:
         id: getconfig
         run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }} 
       
+      - name: Delete ArgoCD
+        run: |
+          kubectl delete ingress argocd-server-ingress -n argocd --ignore-not-found=true  
+          kubectl delete namespace argocd --ignore-not-found=true
+
       # NEED to delete INGRESS CONTROLLER LOAD BALANCER **BEFORE** DELETING KUBERNETES CLUSTER
       - name: Delete Ingress controller
         run: kubectl delete -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.13.2/deploy/static/provider/aws/deploy.yaml
@@ -158,7 +242,7 @@ jobs:
           IMAGES=$(aws ecr list-images --repository-name $REPOSITORY_NAME --query 'imageIds[*]' --output json)
           if [[ "$IMAGES" != "[]" ]]; then
             echo "Deleting images from $REPOSITORY_NAME..."
-            aws ecr batch-delete-image --repository-name $REPOSITORY_NAME --image-ids "$IMAGES" --force
+            aws ecr batch-delete-image --repository-name $REPOSITORY_NAME --image-ids "$IMAGES"
           else
             echo "No images found in $REPOSITORY_NAME."
           fi
