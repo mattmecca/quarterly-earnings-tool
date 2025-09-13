@@ -85,7 +85,10 @@ jobs:
 
       - name: Install Ingress controller # Ingress controller a load balancer that manages external access to services within Kubernetes cluster
         if: steps.apply.outcome == 'success' && steps.getconfig.outcome == 'success'
-        run: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.13.2/deploy/static/provider/aws/deploy.yaml
+        run: |
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.13.2/deploy/static/provider/aws/deploy.yaml
+          # Wait for ingress controller to be ready
+          kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=300s
         # Above command can be found here https://kubernetes.github.io/ingress-nginx/deploy/#aws
         # NEEDED TO CHANGE controller-v1.12.0-beta.0 to controller-v1.13.2
 
@@ -157,6 +160,26 @@ jobs:
       #       }'
       #       echo "ArgoCD will be accessible at: https://argocd.${{ vars.DOMAIN_NAME }}"
       #     fi
+
+      - name: Configure ArgoCD Application
+        if: steps.apply.outcome == 'success' && steps.getconfig.outcome == 'success'
+        working-directory: ./  # Override the default terraform directory
+        run: |
+          # Apply the ArgoCD application from your repository
+          kubectl apply -f argocd/quarterly-earnings-app.yaml
+          
+          # Verify application was created
+          echo "Waiting for ArgoCD Application to be created..."
+          for i in {1..30}; do
+            if kubectl get application quarterly-earnings-tool -n argocd &> /dev/null; then
+              echo "ArgoCD Application created successfully!"
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 2
+          done
+          
+          echo "ArgoCD Application created. You can view it in the ArgoCD UI."
 
       - name: Delete ArgoCD
         if: failure()

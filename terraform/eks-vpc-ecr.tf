@@ -35,6 +35,32 @@ module "vpc" {
   tags = var.tags
 }
 
+# Check if KMS alias already exists
+data "aws_kms_alias" "existing_eks_alias" {
+  name = "alias/eks/${var.name}-eks"
+  # Use try() to handle when alias doesn't exist
+}
+
+# Create KMS key only if alias doesn't exist
+resource "aws_kms_key" "eks" {
+  count       = try(data.aws_kms_alias.existing_eks_alias.arn, null) == null ? 1 : 0
+  description = "EKS Secret Encryption Key"
+  
+  tags = var.tags
+}
+
+# Create KMS alias only if it doesn't exist
+resource "aws_kms_alias" "eks" {
+  count         = try(data.aws_kms_alias.existing_eks_alias.arn, null) == null ? 1 : 0
+  name          = "alias/eks/${var.name}-eks"
+  target_key_id = aws_kms_key.eks[0].key_id
+}
+
+# Use existing or new KMS key
+locals {
+  kms_key_id = try(data.aws_kms_alias.existing_eks_alias.target_key_arn, aws_kms_key.eks[0].arn)
+}
+
 # EKS Cluster
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
@@ -52,6 +78,9 @@ module "eks" {
 
   create_cluster_security_group = false
   create_node_security_group    = false
+
+  # Use our custom KMS key
+  kms_key_id = local.kms_key_id
 
   # Person that creates cluster will also have ADMIN access
   enable_cluster_creator_admin_permissions = true
