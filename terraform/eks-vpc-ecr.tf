@@ -55,7 +55,7 @@ module "eks" {
   # Let the module handle KMS key creation and conflicts
   create_kms_key = false # true
   # kms_key_deletion_window_in_days = 7
-  cluster_encryption_config = []
+  # cluster_encryption_config = []
 
   # Person that creates cluster will also have ADMIN access
   enable_cluster_creator_admin_permissions = true
