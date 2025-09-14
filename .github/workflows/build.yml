@@ -47,6 +47,22 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4 # CHECKS OUT CODE
 
+      - name: Wait for existing cluster deletion
+        run: |
+          echo "Checking if EKS cluster exists..."
+          if aws eks describe-cluster --name ${{ env.EKS_CLUSTER }} &>/dev/null; then
+            CLUSTER_STATUS=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER }} --query 'cluster.status' --output text)
+            echo "Cluster status: $CLUSTER_STATUS"
+            
+            if [ "$CLUSTER_STATUS" = "DELETING" ]; then
+              echo "Cluster is being deleted. Waiting for deletion to complete..."
+              aws eks wait cluster-deleted --name ${{ env.EKS_CLUSTER }}
+              echo "Cluster deletion completed."
+            fi
+          else
+            echo "No existing cluster found."
+          fi
+
       - name: Setup Terraform # Action that allows us to perform TERRAFORM COMMANDS
         uses: hashicorp/setup-terraform@v3
 
