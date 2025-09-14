@@ -55,6 +55,7 @@ module "eks" {
   # Let the module handle KMS key creation and conflicts
   create_kms_key = false # true
   # kms_key_deletion_window_in_days = 7
+  cluster_encryption_config = []
 
   # Person that creates cluster will also have ADMIN access
   enable_cluster_creator_admin_permissions = true
@@ -90,9 +91,9 @@ module "ecr" {
   version = "2.3.0"
 
   repository_name                 = var.ecr_repository
-  registry_scan_type             = "BASIC"
-  repository_type                = "private"
-  create_lifecycle_policy        = false
+  registry_scan_type              = "BASIC"
+  repository_type                 = "private"
+  create_lifecycle_policy         = false
   repository_image_tag_mutability = "MUTABLE"
 
   tags = {
