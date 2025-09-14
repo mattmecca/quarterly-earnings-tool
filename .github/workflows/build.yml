@@ -47,6 +47,13 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4 # CHECKS OUT CODE
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }} # env. bc we DEFINED THEM ABOVE
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
       - name: Wait for existing cluster deletion
         run: |
           echo "Checking if EKS cluster exists..."
@@ -111,13 +118,6 @@ jobs:
         id: apply
         run: terraform apply -auto-approve -input=false -parallelism=1 planfile # parallelism=1 means we want to run ONE STEP AT A TIME
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }} # env. bc we DEFINED THEM ABOVE
-          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
       - name: Get Kubernetes config
         id: getconfig
         if: steps.apply.outcome == 'success' # If 
@@ -136,8 +136,8 @@ jobs:
           kubectl create namespace argocd
           # Install ArgoCD
           kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-          # Wait for ArgoCD to be ready
-          kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+          # (Taken out) Wait for ArgoCD to be ready
+          # kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
           
           # Create Ingress for ArgoCD
           cat <<EOF | kubectl apply -f -
@@ -165,9 +165,9 @@ jobs:
                         number: 443
           EOF
           
-          # Wait for Ingress to get an external IP
-          echo "Waiting for Ingress to get external IP..."
-          kubectl wait --for=jsonpath='{.status.loadBalancer.ingress}' ingress/argocd-server-ingress -n argocd --timeout=300s
+          # (Taken out) Wait for Ingress to get an external IP
+          # echo "Waiting for Ingress to get external IP..."
+          # kubectl wait --for=jsonpath='{.status.loadBalancer.ingress}' ingress/argocd-server-ingress -n argocd --timeout=300s
           
           # Get external access information
           EXTERNAL_IP=$(kubectl get ingress argocd-server-ingress -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
