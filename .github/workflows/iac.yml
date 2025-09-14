@@ -67,6 +67,30 @@ jobs:
         if: steps.plan.outcome == 'failure'
         run: exit 1
 
+      - name: Import existing KMS resources
+        run: |
+          echo "Checking for existing KMS resources..."
+          
+          # Check if KMS alias exists
+          if aws kms describe-key --key-id "alias/eks/${{ env.EKS_CLUSTER }}-eks" &>/dev/null; then
+            echo "KMS alias exists, checking Terraform state..."
+            
+            # Check if already in Terraform state
+            if ! terraform state show 'module.eks.aws_kms_alias.this[0]' &>/dev/null; then
+              echo "Importing KMS alias..."
+              terraform import 'module.eks.aws_kms_alias.this[0]' "alias/eks/${{ env.EKS_CLUSTER }}-eks"
+            fi
+            
+            # Get the KMS key ID and import if needed
+            KEY_ID=$(aws kms describe-key --key-id "alias/eks/${{ env.EKS_CLUSTER }}-eks" --query 'KeyMetadata.KeyId' --output text)
+            if ! terraform state show 'module.eks.aws_kms_key.this[0]' &>/dev/null; then
+              echo "Importing KMS key..."
+              terraform import 'module.eks.aws_kms_key.this[0]' "$KEY_ID"
+            fi
+          else
+            echo "No existing KMS resources found."
+          fi
+
       - name: Terraform apply
         id: apply
         run: terraform apply -auto-approve -input=false -parallelism=1 planfile # parallelism=1 means we want to run ONE STEP AT A TIME

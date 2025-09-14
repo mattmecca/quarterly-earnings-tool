@@ -53,8 +53,8 @@ module "eks" {
   create_node_security_group    = false
 
   # Let the module handle KMS key creation and conflicts
-  create_kms_key = true
-  kms_key_deletion_window_in_days = 7
+  create_kms_key = false # true
+  # kms_key_deletion_window_in_days = 7
 
   # Person that creates cluster will also have ADMIN access
   enable_cluster_creator_admin_permissions = true
