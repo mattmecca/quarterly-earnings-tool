@@ -127,7 +127,21 @@ jobs:
         if: steps.apply.outcome == 'success' && steps.getconfig.outcome == 'success'
         run: |
           kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.13.2/deploy/static/provider/aws/deploy.yaml
-          echo "Ingress controller installation initiated. Pods may take a few minutes to be ready."
+          echo "Waiting for Ingress controller to be ready..."
+          kubectl wait --namespace ingress-nginx \
+            --for=condition=ready pod \
+            --selector=app.kubernetes.io/component=controller \
+            --timeout=600s
+          # Wait for admission webhook to be ready
+          echo "Waiting for admission webhook to be ready..."
+          kubectl wait --namespace ingress-nginx \
+            --for=condition=ready pod \
+            --selector=app.kubernetes.io/component=admission-webhook \
+            --timeout=300s || true
+          # Verify ingress controller is working
+          kubectl get pods -n ingress-nginx
+          kubectl get svc -n ingress-nginx
+          echo "Ingress controller is ready!"
 
       - name: Install ArgoCD
         if: steps.apply.outcome == 'success' && steps.getconfig.outcome == 'success'
@@ -136,10 +150,25 @@ jobs:
           kubectl create namespace argocd
           # Install ArgoCD
           kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-          # (Taken out) Wait for ArgoCD to be ready
-          # kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
           
-          # Create Ingress for ArgoCD
+          echo "ArgoCD installation completed. Waiting before creating Ingress..."
+          sleep 30  # Give ArgoCD services time to be created
+
+      - name: Create ArgoCD Ingress
+        if: steps.apply.outcome == 'success' && steps.getconfig.outcome == 'success'
+        run: |
+          # Wait a bit more for ingress controller to be fully ready
+          echo "Waiting for Ingress controller admission webhook..."
+          for i in {1..10}; do
+            if kubectl get endpoints -n ingress-nginx ingress-nginx-controller-admission | grep -q "ingress-nginx-controller-admission"; then
+              echo "Admission webhook endpoints are ready!"
+              break
+            fi
+            echo "Waiting for admission webhook endpoints... ($i/10)"
+            sleep 15
+          done
+          
+          # Create Ingress for ArgoCD with updated annotation format
           cat <<EOF | kubectl apply -f -
           apiVersion: networking.k8s.io/v1
           kind: Ingress
@@ -147,13 +176,13 @@ jobs:
             name: argocd-server-ingress
             namespace: argocd
             annotations:
-              kubernetes.io/ingress.class: nginx
               nginx.ingress.kubernetes.io/ssl-redirect: "true"
               nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
               nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
           spec:
+            ingressClassName: nginx
             rules:
-            - host: argocd.${{ env.EKS_CLUSTER }}.local  # You can customize this domain
+            - host: argocd.${{ env.EKS_CLUSTER }}.local
               http:
                 paths:
                 - path: /
@@ -165,15 +194,19 @@ jobs:
                         number: 443
           EOF
           
-          # (Taken out) Wait for Ingress to get an external IP
-          # echo "Waiting for Ingress to get external IP..."
-          # kubectl wait --for=jsonpath='{.status.loadBalancer.ingress}' ingress/argocd-server-ingress -n argocd --timeout=300s
+          echo "ArgoCD Ingress created successfully!"
           
-          # Get external access information
-          EXTERNAL_IP=$(kubectl get ingress argocd-server-ingress -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-          echo "ArgoCD is accessible at: https://$EXTERNAL_IP"
+          # Get access information (may take time for load balancer)
+          echo "Getting ArgoCD access information..."
+          echo "Note: Load balancer may take a few minutes to be ready"
+          
+          # Try to get external IP, but don't fail if not ready yet
+          EXTERNAL_IP=$(kubectl get ingress argocd-server-ingress -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
+          echo "ArgoCD will be accessible at: https://$EXTERNAL_IP (when load balancer is ready)"
+          
+          # Get admin password
           echo "ArgoCD admin password:"
-          kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+          kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d || echo "Password not ready yet"
           echo ""
 
       # - name: Setup Route53 DNS for ArgoCD (Optional)
