@@ -123,31 +123,31 @@ jobs:
         if: steps.apply.outcome == 'success' # If 
         run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }} 
 
-      - name: Install Ingress controller
-        if: steps.apply.outcome == 'success' && steps.getconfig.outcome == 'success'
-        run: |
-          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.13.2/deploy/static/provider/aws/deploy.yaml
+      # - name: Install Ingress controller
+      #   if: steps.apply.outcome == 'success' && steps.getconfig.outcome == 'success'
+      #   run: |
+      #     kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.13.2/deploy/static/provider/aws/deploy.yaml
           
-          # Wait for ingress controller pods to be ready
-          echo "Waiting for Ingress controller to be ready..."
-          kubectl wait --namespace ingress-nginx \
-            --for=condition=ready pod \
-            --selector=app.kubernetes.io/component=controller \
-            --timeout=600s
+      #     # Wait for ingress controller pods to be ready
+      #     echo "Waiting for Ingress controller to be ready..."
+      #     kubectl wait --namespace ingress-nginx \
+      #       --for=condition=ready pod \
+      #       --selector=app.kubernetes.io/component=controller \
+      #       --timeout=600s
           
-          # Wait specifically for admission webhook to be ready
-          echo "Waiting for admission webhook to be ready..."
-          kubectl wait --namespace ingress-nginx \
-            --for=condition=available deployment/ingress-nginx-controller \
-            --timeout=300s
+      #     # Wait specifically for admission webhook to be ready
+      #     echo "Waiting for admission webhook to be ready..."
+      #     kubectl wait --namespace ingress-nginx \
+      #       --for=condition=available deployment/ingress-nginx-controller \
+      #       --timeout=300s
           
-          # Give additional time for webhook service to be fully ready
-          echo "Giving webhook service additional time to initialize..."
-          sleep 60
+      #     # Give additional time for webhook service to be fully ready
+      #     echo "Giving webhook service additional time to initialize..."
+      #     sleep 60
           
-          # Verify endpoints are available
-          kubectl get endpoints -n ingress-nginx ingress-nginx-controller-admission
-          echo "Ingress controller is ready!"
+      #     # Verify endpoints are available
+      #     kubectl get endpoints -n ingress-nginx ingress-nginx-controller-admission
+      #     echo "Ingress controller is ready!"
 
       - name: Install ArgoCD
         if: steps.apply.outcome == 'success' && steps.getconfig.outcome == 'success'
@@ -157,54 +157,86 @@ jobs:
           # Install ArgoCD
           kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
           
-          echo "ArgoCD installation completed."
+          #!############################################################################################### 
+          #!#################### TAKE OUT IF WE USE INGRESS CONTROLLER ####################################
+          #!############################################################################################### 
+          # Wait for ArgoCD server to be ready
+          echo "Waiting for ArgoCD server deployment..."
+          kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=600s
+          #!###############################################################################################
+          #!############################################################################################### 
+
+          # Expose ArgoCD via LoadBalancer
+          kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "LoadBalancer"}}'
           
-      - name: Create ArgoCD Ingress (with retry logic)
+          echo "ArgoCD installation completed."
+
+      - name: Get ArgoCD access info
         if: steps.apply.outcome == 'success' && steps.getconfig.outcome == 'success'
         run: |
-          # Retry logic for creating Ingress
-          for i in {1..5}; do
-            echo "Attempt $i to create ArgoCD Ingress..."
-            
-            if cat <<EOF | kubectl apply -f -
-          apiVersion: networking.k8s.io/v1
-          kind: Ingress
-          metadata:
-            name: argocd-server-ingress
-            namespace: argocd
-            annotations:
-              nginx.ingress.kubernetes.io/ssl-redirect: "true"
-          spec:
-            ingressClassName: nginx
-            rules:
-            - host: argocd.${{ env.EKS_CLUSTER }}.local
-              http:
-                paths:
-                - path: /
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: argocd-server
-                      port:
-                        number: 443
-          EOF
-            then
-              echo "ArgoCD Ingress created successfully!"
-              break
-            else
-              echo "Failed to create Ingress, waiting 30 seconds before retry..."
-              sleep 30
-            fi
-          done
+          # Wait for LoadBalancer IP
+          echo "Waiting for LoadBalancer IP..."
+          sleep 60  # Give AWS time to provision the load balancer
           
-          # Get access information
-          echo "Getting ArgoCD access information..."
-          kubectl get ingress -n argocd
+          # Get external access information
+          EXTERNAL_IP=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
+          echo "ArgoCD will be accessible at: https://$EXTERNAL_IP (when load balancer is ready)"
           
           # Get admin password
           echo "ArgoCD admin password:"
           kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d || echo "Password not ready yet"
           echo ""
+          
+          # Show services
+          kubectl get svc -n argocd
+      
+      ##########! ADD BACK IN IF WE USE INGRESS CONTROLLER ##########
+      # - name: Create ArgoCD Ingress (with retry logic)
+      #   if: steps.apply.outcome == 'success' && steps.getconfig.outcome == 'success'
+      #   run: |
+      #     # Retry logic for creating Ingress
+      #     for i in {1..5}; do
+      #       echo "Attempt $i to create ArgoCD Ingress..."
+            
+      #       if cat <<EOF | kubectl apply -f -
+      #     apiVersion: networking.k8s.io/v1
+      #     kind: Ingress
+      #     metadata:
+      #       name: argocd-server-ingress
+      #       namespace: argocd
+      #       annotations:
+      #         nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      #     spec:
+      #       ingressClassName: nginx
+      #       rules:
+      #       - host: argocd.${{ env.EKS_CLUSTER }}.local
+      #         http:
+      #           paths:
+      #           - path: /
+      #             pathType: Prefix
+      #             backend:
+      #               service:
+      #                 name: argocd-server
+      #                 port:
+      #                   number: 443
+      #     EOF
+      #       then
+      #         echo "ArgoCD Ingress created successfully!"
+      #         break
+      #       else
+      #         echo "Failed to create Ingress, waiting 30 seconds before retry..."
+      #         sleep 30
+      #       fi
+      #     done
+          
+      #     # Get access information
+      #     echo "Getting ArgoCD access information..."
+      #     kubectl get ingress -n argocd
+          
+      #     # Get admin password
+      #     echo "ArgoCD admin password:"
+      #     kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d || echo "Password not ready yet"
+      #     echo ""
 
       # - name: Setup Route53 DNS for ArgoCD (Optional)
       #   if: steps.apply.outcome == 'success' && steps.getconfig.outcome == 'success'
