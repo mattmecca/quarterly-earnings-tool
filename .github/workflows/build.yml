@@ -280,6 +280,13 @@ jobs:
           
           echo "ArgoCD Application created. You can view it in the ArgoCD UI."
 
+      - name: Delete ArgoCD LoadBalancer
+        if: failure()
+        run: |
+          echo "Cleaning up ArgoCD LoadBalancer..."
+          kubectl patch svc argocd-server -n argocd -p '{"spec":{"type":"ClusterIP"}}' --ignore-not-found=true || true
+          kubectl delete svc argocd-server -n argocd --ignore-not-found=true || true
+
       - name: Delete ArgoCD
         if: failure()
         run: |
@@ -346,7 +353,20 @@ jobs:
       - name: Get Kubernetes config
         id: getconfig
         run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }} 
-      
+
+      - name: Delete ArgoCD Application
+        run: |
+          echo "Deleting ArgoCD Application..."
+          kubectl delete application quarterly-earnings-tool -n argocd --ignore-not-found=true || true
+
+      - name: Delete ArgoCD LoadBalancer
+        run: |
+          echo "Cleaning up ArgoCD LoadBalancer..."
+          # Change service type back to ClusterIP to release the LoadBalancer
+          kubectl patch svc argocd-server -n argocd -p '{"spec":{"type":"ClusterIP"}}' --ignore-not-found=true || true
+          # Wait a bit for AWS to process the change
+          sleep 30
+
       - name: Delete ArgoCD
         run: |
           kubectl delete ingress argocd-server-ingress -n argocd --ignore-not-found=true  
@@ -368,6 +388,15 @@ jobs:
           else
             echo "No images found in $REPOSITORY_NAME."
           fi
+
+      # Wait for LoadBalancers to be fully deleted before destroying infrastructure
+      - name: Wait for LoadBalancers to be deleted
+        run: |
+          echo "Waiting for LoadBalancers to be fully deleted..."
+          sleep 120  # Give AWS time to clean up LoadBalancers
+          
+          # Optional: Check if any LoadBalancers still exist (requires jq)
+          # aws elbv2 describe-load-balancers --query 'LoadBalancers[?contains(LoadBalancerName, `${{ env.EKS_CLUSTER }}`)].LoadBalancerArn' --output text || true
 
       # FINALLY, we execute `terraform destroy ...` command
       - name: Terraform destroy
