@@ -371,14 +371,39 @@ jobs:
           # Wait a bit for AWS to process the change
           sleep 30
 
-      - name: Delete ArgoCD
+      - name: Delete ArgoCD namespace
         run: |
-          kubectl delete ingress argocd-server-ingress -n argocd --ignore-not-found=true  
-          kubectl delete namespace argocd --ignore-not-found=true
+          kubectl delete namespace argocd --ignore-not-found=true || true
+          # Wait for namespace deletion
+          kubectl wait --for=delete namespace/argocd --timeout=300s || true
 
-      # NEED to delete INGRESS CONTROLLER LOAD BALANCER **BEFORE** DELETING KUBERNETES CLUSTER
-      - name: Delete Ingress controller
-        run: kubectl delete -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.13.2/deploy/static/provider/aws/deploy.yaml
+      - name: Clean up any remaining LoadBalancers
+        run: |
+          echo "Checking for remaining LoadBalancers..."
+          # List all LoadBalancers and delete ones created by this cluster
+          aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(LoadBalancerName, '${{ env.EKS_CLUSTER }}')].LoadBalancerArn" --output text | while read -r lb_arn; do
+            if [ ! -z "$lb_arn" ]; then
+              echo "Deleting LoadBalancer: $lb_arn"
+              aws elbv2 delete-load-balancer --load-balancer-arn "$lb_arn" || true
+            fi
+          done
+          
+          # Also check classic LoadBalancers
+          aws elb describe-load-balancers --query "LoadBalancerDescriptions[?contains(LoadBalancerName, '${{ env.EKS_CLUSTER }}')].LoadBalancerName" --output text | while read -r lb_name; do
+            if [ ! -z "$lb_name" ]; then
+              echo "Deleting Classic LoadBalancer: $lb_name"
+              aws elb delete-load-balancer --load-balancer-name "$lb_name" || true
+            fi
+          done
+
+      - name: Wait for LoadBalancers to be deleted
+        run: |
+          echo "Waiting for LoadBalancers to be fully deleted..."
+          sleep 120  # Give AWS time to clean up LoadBalancers and detach from subnets
+
+      # # NEED to delete INGRESS CONTROLLER LOAD BALANCER **BEFORE** DELETING KUBERNETES CLUSTER
+      # - name: Delete Ingress controller
+      #   run: kubectl delete -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.13.2/deploy/static/provider/aws/deploy.yaml
 
       # Also want to EMPTY ECR REPO of STORED IMAGES **BEFORE** IT IS DELETED
       - name: Empty ECR Repository
