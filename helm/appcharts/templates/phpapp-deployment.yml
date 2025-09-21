@@ -13,8 +13,8 @@ spec:
         app: php-app
     spec:
       containers:
-        - name: php-app
-          image: {{ .Values.appimage }}:{{ .Values.apptag }} # Access VARIABLES defined in WORKFLOW
+        - name: quarterly-earnings-tool
+          image: "{{ .Values.appimage }}:{{ .Values.apptag }}" # Access VARIABLES defined in WORKFLOW
           ports:
             - containerPort: 80
           env:
