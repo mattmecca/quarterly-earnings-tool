@@ -61,18 +61,23 @@ jobs:
             # Configure kubectl
             aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
             
-            # Delete existing resources that Helm will recreate
+            # Delete existing Helm release completely (if exists)
+            helm uninstall webapp-stack -n default || true
+            
+            # Delete all resources that might conflict
             kubectl delete secret db-secret -n default --ignore-not-found=true
             kubectl delete configmap app-config -n default --ignore-not-found=true
             kubectl delete pvc mysql-pvc -n default --ignore-not-found=true
             kubectl delete service mysql-service -n default --ignore-not-found=true
             kubectl delete service php-app-service -n default --ignore-not-found=true
+            kubectl delete service phpmyadmin-service -n default --ignore-not-found=true
             kubectl delete deployment mysql-db -n default --ignore-not-found=true
             kubectl delete deployment php-app -n default --ignore-not-found=true
+            kubectl delete deployment phpmyadmin -n default --ignore-not-found=true
             kubectl delete ingress php-app-ingress -n default --ignore-not-found=true
             
-            # Wait a moment for deletion to complete
-            sleep 10
+            # Wait for cleanup to complete
+            sleep 15
             
             echo "Cleanup completed"
 
@@ -83,11 +88,21 @@ jobs:
             aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
             aws-region: ${{ env.AWS_REGION }}
             cluster-name: ${{ env.EKS_CLUSTER }}
-            chart-path: helm/appcharts # References EVERYTHING in `appcharts`
+            chart-path: helm/appcharts
             namespace: default
-            values: appimage=${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }},apptag=${{ github.run_number }}
+            values: |
+              appimage: ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+              apptag: ${{ github.run_number }}
+              mysql:
+                rootPassword: "contactform-rootpass"
+                user: "contactformdb-admin"
+                password: "contactform-password"
+              pma:
+                user: "contactformdb-pmadmin"
+                password: "contactform-password"
             name: webapp-stack
-        
+            create-namespace: true
+                    
         - name: Show Pods
           run: kubectl get pod -A # Shows us all the kubernetes pods
         
