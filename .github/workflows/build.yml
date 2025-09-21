@@ -160,36 +160,39 @@ jobs:
           #!############################################################################################### 
           #!#################### TAKE OUT IF WE USE INGRESS CONTROLLER ####################################
           #!############################################################################################### 
-          # Wait for ArgoCD server to be ready
-          echo "Waiting for ArgoCD server deployment..."
-          kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=600s
+          # Wait for ArgoCD with a more reasonable timeout for t3.small
+          echo "Waiting for ArgoCD server deployment (this may take 5-10 minutes on t3.small)..."
+          kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=900s || {
+            echo "ArgoCD server not fully ready yet, but continuing..."
+            kubectl get pods -n argocd
+          }
+          # Expose ArgoCD via LoadBalancer
+          kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "LoadBalancer"}}'            
           #!###############################################################################################
           #!############################################################################################### 
-
-          # Expose ArgoCD via LoadBalancer
-          kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "LoadBalancer"}}'
-          
+  
           echo "ArgoCD installation completed."
 
       - name: Get ArgoCD access info
         if: steps.apply.outcome == 'success' && steps.getconfig.outcome == 'success'
         run: |
-          # Wait for LoadBalancer IP
-          echo "Waiting for LoadBalancer IP..."
-          sleep 60  # Give AWS time to provision the load balancer
+          # Get ArgoCD status
+          echo "ArgoCD pod status:"
+          kubectl get pods -n argocd
+          echo ""
+          
+          # Wait a bit for LoadBalancer
+          echo "Waiting for LoadBalancer to be provisioned..."
+          sleep 60
           
           # Get external access information
           EXTERNAL_IP=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
-          echo "ArgoCD will be accessible at: https://$EXTERNAL_IP (when load balancer is ready)"
+          echo "ArgoCD will be accessible at: https://$EXTERNAL_IP"
           
           # Get admin password
           echo "ArgoCD admin password:"
           kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d || echo "Password not ready yet"
           echo ""
-          
-          # Show services
-          kubectl get svc -n argocd
-      
       ##########! ADD BACK IN IF WE USE INGRESS CONTROLLER ##########
       # - name: Create ArgoCD Ingress (with retry logic)
       #   if: steps.apply.outcome == 'success' && steps.getconfig.outcome == 'success'
@@ -292,11 +295,12 @@ jobs:
         run: |
           kubectl delete ingress argocd-server-ingress -n argocd --ignore-not-found=true
           kubectl delete namespace argocd --ignore-not-found=true
-
-      - name: Delete Ingress controller
-        if: failure()
-        run: |
-          kubectl delete -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.13.2/deploy/static/provider/aws/deploy.yaml
+      
+      #############! Add back in if we use INGRESS CONTROLLER #############
+      # - name: Delete Ingress controller
+      #   if: failure()
+      #   run: |
+      #     kubectl delete -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.13.2/deploy/static/provider/aws/deploy.yaml
 
       - name: Empty ECR Repository
         if: failure()

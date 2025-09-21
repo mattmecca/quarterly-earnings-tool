@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: php-app
-          image: {{ .Values.appimage}}:{{ .Values.apptag}} # Access VARIABLES defined in WORKFLOW
+          image: {{ .Values.appimage }}:{{ .Values.apptag }} # Access VARIABLES defined in WORKFLOW
           ports:
             - containerPort: 80
           env:
