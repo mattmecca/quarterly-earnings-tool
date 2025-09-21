@@ -81,6 +81,20 @@ jobs:
             
             echo "Cleanup completed"
 
+        - name: Create values file
+          run: |
+            cat <<EOF > /tmp/helm-values.yaml
+            appimage: ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+            apptag: ${{ github.run_number }}
+            mysql:
+              rootPassword: "Y29udGFjdGZvcm0tcm9vdHBhc3M="
+              user: "Y29udGFjdGZvcm1kYi1hZG1pbg=="
+              password: "Y29udGFjdGZvcm0tcGFzc3dvcmQ="
+            pma:
+              user: "Y29udGFjdGZvcm1kYi1wbWFkbWlu"
+              password: "Y29udGFjdGZvcm0tcGFzc3dvcmQ="
+            EOF
+
         - name: Deploy with Helm
           uses: bitovi/github-actions-deploy-eks-helm@v1.2.12
           with:
@@ -90,19 +104,10 @@ jobs:
             cluster-name: ${{ env.EKS_CLUSTER }}
             chart-path: helm/appcharts
             namespace: default
-            values: |
-              appimage: ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
-              apptag: ${{ github.run_number }}
-              mysql:
-                rootPassword: "contactform-rootpass"
-                user: "contactformdb-admin"
-                password: "contactform-password"
-              pma:
-                user: "contactformdb-pmadmin"
-                password: "contactform-password"
+            config-files: /tmp/helm-values.yaml
             name: webapp-stack
             create-namespace: true
-                    
+
         - name: Show Pods
           run: kubectl get pod -A # Shows us all the kubernetes pods
         
