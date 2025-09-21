@@ -83,30 +83,47 @@ jobs:
 
         - name: Create values file
           run: |
-            cat <<EOF > /tmp/helm-values.yaml
+            cat <<EOF > helm-values.yaml
             appimage: ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
             apptag: ${{ github.run_number }}
             mysql:
-              rootPassword: "Y29udGFjdGZvcm0tcm9vdHBhc3M="
-              user: "Y29udGFjdGZvcm1kYi1hZG1pbg=="
-              password: "Y29udGFjdGZvcm0tcGFzc3dvcmQ="
+              rootPassword: "Y29udGFjdGZvcm0tcm9vdHBhc3M=" #! Need to replace these with Github secrets
+              user: "Y29udGFjdGZvcm1kYi1hZG1pbg==" #! Need to replace these with Github secrets
+              password: "Y29udGFjdGZvcm0tcGFzc3dvcmQ=" #! Need to replace these with Github secrets
             pma:
-              user: "Y29udGFjdGZvcm1kYi1wbWFkbWlu"
-              password: "Y29udGFjdGZvcm0tcGFzc3dvcmQ="
+              user: "Y29udGFjdGZvcm1kYi1wbWFkbWlu" #! Need to replace these with Github secrets
+              password: "Y29udGFjdGZvcm0tcGFzc3dvcmQ=" #! Need to replace these with Github secrets
             EOF
 
         - name: Deploy with Helm
-          uses: bitovi/github-actions-deploy-eks-helm@v1.2.12
-          with:
-            aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-            aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-            aws-region: ${{ env.AWS_REGION }}
-            cluster-name: ${{ env.EKS_CLUSTER }}
-            chart-path: helm/appcharts
-            namespace: default
-            config-files: /tmp/helm-values.yaml
-            name: webapp-stack
-            create-namespace: true
+          run: |
+            # Update kubeconfig
+            aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
+            
+            # Deploy using helm directly
+            helm upgrade --install webapp-stack helm/appcharts \
+              --namespace default \
+              --create-namespace \
+              --set appimage=${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }} \
+              --set apptag=${{ github.run_number }} \
+              --set mysql.rootPassword="Y29udGFjdGZvcm0tcm9vdHBhc3M=" \
+              --set mysql.user="Y29udGFjdGZvcm1kYi1hZG1pbg==" \
+              --set mysql.password="Y29udGFjdGZvcm0tcGFzc3dvcmQ=" \
+              --set pma.user="Y29udGFjdGZvcm1kYi1wbWFkbWlu" \
+              --set pma.password="Y29udGFjdGZvcm0tcGFzc3dvcmQ=" \
+              --timeout 10m \
+              --wait              
+          # uses: bitovi/github-actions-deploy-eks-helm@v1.2.12
+          # with:
+          #   aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          #   aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          #   aws-region: ${{ env.AWS_REGION }}
+          #   cluster-name: ${{ env.EKS_CLUSTER }}
+          #   chart-path: helm/appcharts
+          #   namespace: default
+          #   config-files: helm-values.yaml
+          #   name: webapp-stack
+          #   create-namespace: true
 
         - name: Show Pods
           run: kubectl get pod -A # Shows us all the kubernetes pods
