@@ -64,6 +64,7 @@ jobs:
             # Delete existing resources that Helm will recreate
             kubectl delete secret db-secret -n default --ignore-not-found=true
             kubectl delete configmap app-config -n default --ignore-not-found=true
+            kubectl delete pvc mysql-pvc -n default --ignore-not-found=true
             
             # Wait a moment for deletion to complete
             sleep 10
