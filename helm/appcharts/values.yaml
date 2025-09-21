@@ -6,9 +6,11 @@ mysql:
   rootPassword: Y29udGFjdGZvcm0tcm9vdHBhc3M= # base64 encoded
   user: Y29udGFjdGZvcm1kYi1hZG1pbg== # base64 encoded
   password: Y29udGFjdGZvcm0tcGFzc3dvcmQ= # base64 encoded
+
 pma:
   user: Y29udGFjdGZvcm1kYi1wbWFkbWlu # base64 encoded
   password: Y29udGFjdGZvcm0tcGFzc3dvcmQ= # base64 encoded
+
 replicaCount: 1
 
 image:
