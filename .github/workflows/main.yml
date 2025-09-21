@@ -54,6 +54,22 @@ jobs:
               --docker-username=AWS \
               --docker-password=$(aws ecr get-login-password)
 
+        - name: Clean up existing resources
+          run: |
+            echo "Cleaning up existing resources that conflict with Helm..."
+            
+            # Configure kubectl
+            aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
+            
+            # Delete existing resources that Helm will recreate
+            kubectl delete secret db-secret -n default --ignore-not-found=true
+            kubectl delete configmap app-config -n default --ignore-not-found=true
+            
+            # Wait a moment for deletion to complete
+            sleep 10
+            
+            echo "Cleanup completed"
+
         - name: Deploy with Helm
           uses: bitovi/github-actions-deploy-eks-helm@v1.2.12
           with:
