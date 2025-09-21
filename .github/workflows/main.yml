@@ -56,30 +56,21 @@ jobs:
 
         - name: Clean up existing resources
           run: |
-            echo "Cleaning up existing resources that conflict with Helm..."
+            echo "Cleaning up ALL resources in default namespace..."
             
             # Configure kubectl
             aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
             
-            # Delete existing Helm release completely (if exists)
-            helm uninstall webapp-stack -n default || true
+            # Delete all Helm releases in default namespace
+            helm list -n default --short | xargs -r helm uninstall -n default || true
             
-            # Delete all resources that might conflict
-            kubectl delete secret db-secret -n default --ignore-not-found=true
-            kubectl delete configmap app-config -n default --ignore-not-found=true
-            kubectl delete pvc mysql-pvc -n default --ignore-not-found=true
-            kubectl delete service mysql-service -n default --ignore-not-found=true
-            kubectl delete service php-app-service -n default --ignore-not-found=true
-            kubectl delete service phpmyadmin-service -n default --ignore-not-found=true
-            kubectl delete deployment mysql-db -n default --ignore-not-found=true
-            kubectl delete deployment php-app -n default --ignore-not-found=true
-            kubectl delete deployment phpmyadmin -n default --ignore-not-found=true
-            kubectl delete ingress php-app-ingress -n default --ignore-not-found=true
+            # Delete all resources in default namespace
+            kubectl delete all,secrets,configmaps,pvc,ingress --all -n default --ignore-not-found=true || true
             
             # Wait for cleanup to complete
-            sleep 15
+            sleep 30
             
-            echo "Cleanup completed"
+            echo "Complete cleanup completed"
 
         - name: Create values file
           run: |
