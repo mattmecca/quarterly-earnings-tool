@@ -65,6 +65,11 @@ jobs:
             kubectl delete secret db-secret -n default --ignore-not-found=true
             kubectl delete configmap app-config -n default --ignore-not-found=true
             kubectl delete pvc mysql-pvc -n default --ignore-not-found=true
+            kubectl delete service mysql-service -n default --ignore-not-found=true
+            kubectl delete service php-app-service -n default --ignore-not-found=true
+            kubectl delete deployment mysql-db -n default --ignore-not-found=true
+            kubectl delete deployment php-app -n default --ignore-not-found=true
+            kubectl delete ingress php-app-ingress -n default --ignore-not-found=true
             
             # Wait a moment for deletion to complete
             sleep 10
