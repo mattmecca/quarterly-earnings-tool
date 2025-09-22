@@ -71,23 +71,6 @@ jobs:
             
             # Verify nothing is left
             kubectl get all -n default
-            
-        - name: Deploy with Helm (fixed)
-          run: |
-            aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
-            
-            helm upgrade --install webapp-stack helm/appcharts \
-              --namespace default \
-              --create-namespace \
-              --set appimage=${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }} \
-              --set apptag=${{ github.run_number }} \
-              --set mysql.rootPassword="contactform-rootpass" \
-              --set mysql.user="contactformdb-admin" \
-              --set mysql.password="contactform-password" \
-              --set pma.user="contactformdb-pmadmin" \
-              --set pma.password="contactform-password" \
-              --timeout 15m \
-              --wait
 
         - name: Create values file
           run: |
@@ -112,6 +95,7 @@ jobs:
             helm upgrade --install webapp-stack helm/appcharts \
               --namespace default \
               --create-namespace \
+              --values helm-values.yaml \
               --set appimage=${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }} \
               --set apptag=${{ github.run_number }} \
               --set mysql.rootPassword="contactform-rootpass" \
@@ -119,7 +103,7 @@ jobs:
               --set mysql.password="contactform-password" \
               --set pma.user="contactformdb-pmadmin" \
               --set pma.password="contactform-password" \
-              --timeout 15m \
+              --timeout 15m # \
               # --wait
 
             # Check what was created
@@ -157,4 +141,4 @@ jobs:
           run: kubectl get pod -A # Shows us all the kubernetes pods
         
         - name: Show Ingress
-          run: kubectl get ingress # Shows us the ingress controller
+          run: kubectl get ingress -n default # Shows us the ingress controller

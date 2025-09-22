@@ -15,7 +15,7 @@ spec:
         backend:
           service:
             name: php-app-service
-            namespace: default
+            # namespace: default
             port:
               number: 80
   - host: phpmyadmin.thedevcloud.xyz
@@ -26,6 +26,6 @@ spec:
         backend:
           service:
             name: phpmyadmin-service
-            namespace: default
+            # namespace: default
             port:
               number: 8081
