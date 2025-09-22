@@ -426,6 +426,9 @@ jobs:
           # Optional: Check if any LoadBalancers still exist (requires jq)
           # aws elbv2 describe-load-balancers --query 'LoadBalancers[?contains(LoadBalancerName, `${{ env.EKS_CLUSTER }}`)].LoadBalancerArn' --output text || true
 
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      
       - name: Extra AWS cleanup
         if: always()
         run: |
@@ -434,47 +437,96 @@ jobs:
           if [ "$VPC_ID" != "None" ] && [ "$VPC_ID" != "" ]; then
             echo "Found VPC: $VPC_ID"
             
-            # Terminate EC2 instances
+            # Terminate EC2 instances first
             INSTANCE_IDS=$(aws ec2 describe-instances --filters "Name=vpc-id,Values=$VPC_ID" "Name=instance-state-name,Values=running,pending,stopping,stopped" --query "Reservations[*].Instances[*].InstanceId" --output text)
             if [ ! -z "$INSTANCE_IDS" ]; then
               echo "Terminating instances: $INSTANCE_IDS"
               echo "$INSTANCE_IDS" | xargs -n1 aws ec2 terminate-instances --instance-ids
+              
+              # Wait for instances to terminate
+              echo "Waiting for instances to terminate..."
+              sleep 60
             fi
+            
+            # Delete Load Balancers in this VPC
+            echo "Deleting Load Balancers in VPC..."
+            aws elbv2 describe-load-balancers --query "LoadBalancers[?VpcId=='$VPC_ID'].LoadBalancerArn" --output text | while read -r lb_arn; do
+              if [ ! -z "$lb_arn" ]; then
+                echo "Deleting ALB/NLB: $lb_arn"
+                aws elbv2 delete-load-balancer --load-balancer-arn "$lb_arn" || true
+              fi
+            done
+            
+            # Delete Classic Load Balancers
+            aws elb describe-load-balancers --query "LoadBalancerDescriptions[?VpcId=='$VPC_ID'].LoadBalancerName" --output text | while read -r lb_name; do
+              if [ ! -z "$lb_name" ]; then
+                echo "Deleting Classic LB: $lb_name"
+                aws elb delete-load-balancer --load-balancer-name "$lb_name" || true
+              fi
+            done
+            
+            # Wait for Load Balancers to be deleted
+            sleep 120
             
             # Delete NAT Gateways
             NAT_GATEWAYS=$(aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=$VPC_ID" "Name=state,Values=available" --query "NatGateways[*].NatGatewayId" --output text)
             if [ ! -z "$NAT_GATEWAYS" ]; then
               echo "Deleting NAT Gateways: $NAT_GATEWAYS"
               echo "$NAT_GATEWAYS" | xargs -n1 aws ec2 delete-nat-gateway --nat-gateway-id
+              
+              # Wait for NAT Gateways to be deleted
+              echo "Waiting for NAT Gateways to be deleted..."
+              sleep 180
             fi
             
-            # Wait for NAT Gateways to be deleted
-            sleep 120
+            # Release Elastic IPs associated with NAT Gateways and instances
+            echo "Releasing Elastic IPs..."
+            EIPS=$(aws ec2 describe-addresses --filters "Name=domain,Values=vpc" --query "Addresses[*].AllocationId" --output text)
+            if [ ! -z "$EIPS" ]; then
+              echo "Found EIPs: $EIPS"
+              for eip in $EIPS; do
+                echo "Releasing EIP: $eip"
+                aws ec2 release-address --allocation-id "$eip" || true
+              done
+            fi
             
-            # Delete ENIs (one at a time)
+            # Delete all ENIs in the VPC (except primary ENIs of running instances)
+            echo "Deleting Network Interfaces..."
             ENIS=$(aws ec2 describe-network-interfaces --filters "Name=vpc-id,Values=$VPC_ID" --query "NetworkInterfaces[?Status=='available'].NetworkInterfaceId" --output text)
             if [ ! -z "$ENIS" ]; then
-              echo "Deleting ENIs: $ENIS"
+              echo "Found available ENIs: $ENIS"
               for eni in $ENIS; do
                 echo "Deleting ENI: $eni"
                 aws ec2 delete-network-interface --network-interface-id "$eni" || true
               done
             fi
             
-            # Release EIPs
-            EIPS=$(aws ec2 describe-addresses --filters "Name=domain,Values=vpc" --query "Addresses[*].AllocationId" --output text)
-            if [ ! -z "$EIPS" ]; then
-              echo "Releasing EIPs: $EIPS"
-              echo "$EIPS" | xargs -n1 aws ec2 release-address --allocation-id
+            # Delete Security Group rules that reference other security groups
+            echo "Cleaning up Security Group rules..."
+            SG_IDS=$(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$VPC_ID" --query "SecurityGroups[?GroupName!='default'].GroupId" --output text)
+            if [ ! -z "$SG_IDS" ]; then
+              for sg_id in $SG_IDS; do
+                echo "Cleaning rules for Security Group: $sg_id"
+                # Remove ingress rules
+                aws ec2 describe-security-groups --group-ids "$sg_id" --query "SecurityGroups[0].IpPermissions" --output json | \
+                jq -c '.[]' 2>/dev/null | while read -r rule; do
+                  aws ec2 revoke-security-group-ingress --group-id "$sg_id" --ip-permissions "$rule" 2>/dev/null || true
+                done
+                # Remove egress rules
+                aws ec2 describe-security-groups --group-ids "$sg_id" --query "SecurityGroups[0].IpPermissionsEgress" --output json | \
+                jq -c '.[]' 2>/dev/null | while read -r rule; do
+                  aws ec2 revoke-security-group-egress --group-id "$sg_id" --ip-permissions "$rule" 2>/dev/null || true
+                done
+              done
             fi
+            
+            # Wait for all resources to be fully deleted
+            sleep 60
+            
           else
             echo "No VPC found with name pattern ${{ env.EKS_CLUSTER }}*"
-          fi
-          
-          # Wait for resources to be deleted
-          sleep 60
-          
-    
+          fi 
+
       # FINALLY, we execute `terraform destroy ...` command
       - name: Terraform destroy
         id: destroy
