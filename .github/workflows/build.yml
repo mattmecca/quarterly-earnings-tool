@@ -407,7 +407,6 @@ jobs:
 
       # Also want to EMPTY ECR REPO of STORED IMAGES **BEFORE** IT IS DELETED
       - name: Empty ECR Repository
-        if: failure()
         run: |
           REPOSITORY_NAME=${{ vars.ECR_REPOSITORY }}
           IMAGES=$(aws ecr list-images --repository-name $REPOSITORY_NAME --query 'imageIds[*]' --output json)
@@ -430,5 +429,4 @@ jobs:
       # FINALLY, we execute `terraform destroy ...` command
       - name: Terraform destroy
         id: destroy
-        if: failure()
         run: terraform destroy -auto-approve -input=false
