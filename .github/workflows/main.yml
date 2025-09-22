@@ -3,6 +3,7 @@ on:
   push:
     branches:
         - production
+
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
   ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
@@ -54,23 +55,39 @@ jobs:
               --docker-username=AWS \
               --docker-password=$(aws ecr get-login-password)
 
-        - name: Clean up existing resources
+        - name: Clean up completely before deploy
           run: |
-            echo "Cleaning up ALL resources in default namespace..."
-            
-            # Configure kubectl
+            echo "Complete cleanup of default namespace..."
             aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
             
-            # Delete all Helm releases in default namespace
+            # Force delete all Helm releases
             helm list -n default --short | xargs -r helm uninstall -n default || true
             
             # Delete all resources in default namespace
             kubectl delete all,secrets,configmaps,pvc,ingress --all -n default --ignore-not-found=true || true
             
-            # Wait for cleanup to complete
-            sleep 30
+            # Wait for complete cleanup
+            sleep 60
             
-            echo "Complete cleanup completed"
+            # Verify nothing is left
+            kubectl get all -n default
+            
+        - name: Deploy with Helm (fixed)
+          run: |
+            aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
+            
+            helm upgrade --install webapp-stack helm/appcharts \
+              --namespace default \
+              --create-namespace \
+              --set appimage=${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }} \
+              --set apptag=${{ github.run_number }} \
+              --set mysql.rootPassword="contactform-rootpass" \
+              --set mysql.user="contactformdb-admin" \
+              --set mysql.password="contactform-password" \
+              --set pma.user="contactformdb-pmadmin" \
+              --set pma.password="contactform-password" \
+              --timeout 15m \
+              --wait
 
         - name: Create values file
           run: |
