@@ -430,20 +430,50 @@ jobs:
         if: always()
         run: |
           VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=${{ env.EKS_CLUSTER }}*" --query "Vpcs[0].VpcId" --output text)
-          # Terminate EC2 instances
-          aws ec2 describe-instances --filters "Name=vpc-id,Values=$VPC_ID" --query "Reservations[*].Instances[*].InstanceId" --output text | \
-            xargs -r aws ec2 terminate-instances --instance-ids
-          # Delete NAT Gateways
-          aws ec2 describe-nat-gateways --filter Name=vpc-id,Values=$VPC_ID --query "NatGateways[*].NatGatewayId" --output text | \
-            xargs -r aws ec2 delete-nat-gateway --nat-gateway-id
-          # Delete ENIs
-          aws ec2 describe-network-interfaces --filters "Name=vpc-id,Values=$VPC_ID" --query "NetworkInterfaces[*].NetworkInterfaceId" --output text | \
-            xargs -r aws ec2 delete-network-interface --network-interface-id
-          # Release EIPs
-          aws ec2 describe-addresses --query "Addresses[*].AllocationId" --output text | \
-            xargs -r aws ec2 release-address --allocation-id
+          
+          if [ "$VPC_ID" != "None" ] && [ "$VPC_ID" != "" ]; then
+            echo "Found VPC: $VPC_ID"
+            
+            # Terminate EC2 instances
+            INSTANCE_IDS=$(aws ec2 describe-instances --filters "Name=vpc-id,Values=$VPC_ID" "Name=instance-state-name,Values=running,pending,stopping,stopped" --query "Reservations[*].Instances[*].InstanceId" --output text)
+            if [ ! -z "$INSTANCE_IDS" ]; then
+              echo "Terminating instances: $INSTANCE_IDS"
+              echo "$INSTANCE_IDS" | xargs -n1 aws ec2 terminate-instances --instance-ids
+            fi
+            
+            # Delete NAT Gateways
+            NAT_GATEWAYS=$(aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=$VPC_ID" "Name=state,Values=available" --query "NatGateways[*].NatGatewayId" --output text)
+            if [ ! -z "$NAT_GATEWAYS" ]; then
+              echo "Deleting NAT Gateways: $NAT_GATEWAYS"
+              echo "$NAT_GATEWAYS" | xargs -n1 aws ec2 delete-nat-gateway --nat-gateway-id
+            fi
+            
+            # Wait for NAT Gateways to be deleted
+            sleep 120
+            
+            # Delete ENIs (one at a time)
+            ENIS=$(aws ec2 describe-network-interfaces --filters "Name=vpc-id,Values=$VPC_ID" --query "NetworkInterfaces[?Status=='available'].NetworkInterfaceId" --output text)
+            if [ ! -z "$ENIS" ]; then
+              echo "Deleting ENIs: $ENIS"
+              for eni in $ENIS; do
+                echo "Deleting ENI: $eni"
+                aws ec2 delete-network-interface --network-interface-id "$eni" || true
+              done
+            fi
+            
+            # Release EIPs
+            EIPS=$(aws ec2 describe-addresses --filters "Name=domain,Values=vpc" --query "Addresses[*].AllocationId" --output text)
+            if [ ! -z "$EIPS" ]; then
+              echo "Releasing EIPs: $EIPS"
+              echo "$EIPS" | xargs -n1 aws ec2 release-address --allocation-id
+            fi
+          else
+            echo "No VPC found with name pattern ${{ env.EKS_CLUSTER }}*"
+          fi
+          
           # Wait for resources to be deleted
           sleep 60
+          
     
       # FINALLY, we execute `terraform destroy ...` command
       - name: Terraform destroy
