@@ -426,6 +426,24 @@ jobs:
           # Optional: Check if any LoadBalancers still exist (requires jq)
           # aws elbv2 describe-load-balancers --query 'LoadBalancers[?contains(LoadBalancerName, `${{ env.EKS_CLUSTER }}`)].LoadBalancerArn' --output text || true
 
+      - name: Extra AWS cleanup
+        run: |
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=${{ env.EKS_CLUSTER }}*" --query "Vpcs[0].VpcId" --output text)
+          # Terminate EC2 instances
+          aws ec2 describe-instances --filters "Name=vpc-id,Values=$VPC_ID" --query "Reservations[*].Instances[*].InstanceId" --output text | \
+            xargs -r aws ec2 terminate-instances --instance-ids
+          # Delete NAT Gateways
+          aws ec2 describe-nat-gateways --filter Name=vpc-id,Values=$VPC_ID --query "NatGateways[*].NatGatewayId" --output text | \
+            xargs -r aws ec2 delete-nat-gateway --nat-gateway-id
+          # Delete ENIs
+          aws ec2 describe-network-interfaces --filters "Name=vpc-id,Values=$VPC_ID" --query "NetworkInterfaces[*].NetworkInterfaceId" --output text | \
+            xargs -r aws ec2 delete-network-interface --network-interface-id
+          # Release EIPs
+          aws ec2 describe-addresses --query "Addresses[*].AllocationId" --output text | \
+            xargs -r aws ec2 release-address --allocation-id
+          # Wait for resources to be deleted
+          sleep 60
+    
       # FINALLY, we execute `terraform destroy ...` command
       - name: Terraform destroy
         id: destroy
