@@ -427,6 +427,7 @@ jobs:
           # aws elbv2 describe-load-balancers --query 'LoadBalancers[?contains(LoadBalancerName, `${{ env.EKS_CLUSTER }}`)].LoadBalancerArn' --output text || true
 
       - name: Extra AWS cleanup
+        if: always()
         run: |
           VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=${{ env.EKS_CLUSTER }}*" --query "Vpcs[0].VpcId" --output text)
           # Terminate EC2 instances
