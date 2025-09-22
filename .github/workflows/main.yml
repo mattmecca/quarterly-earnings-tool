@@ -78,12 +78,12 @@ jobs:
             appimage: ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
             apptag: ${{ github.run_number }}
             mysql:
-              rootPassword: "Y29udGFjdGZvcm0tcm9vdHBhc3M=" #! Need to replace these with Github secrets
-              user: "Y29udGFjdGZvcm1kYi1hZG1pbg==" #! Need to replace these with Github secrets
-              password: "Y29udGFjdGZvcm0tcGFzc3dvcmQ=" #! Need to replace these with Github secrets
+              rootPassword: "contactform-rootpass" #! Need to replace these with Github secrets
+              user: "contactformdb-admin" #! Need to replace these with Github secrets
+              password: "contactform-password" #! Need to replace these with Github secrets
             pma:
-              user: "Y29udGFjdGZvcm1kYi1wbWFkbWlu" #! Need to replace these with Github secrets
-              password: "Y29udGFjdGZvcm0tcGFzc3dvcmQ=" #! Need to replace these with Github secrets
+              user: "contactformdb-pmadmin" #! Need to replace these with Github secrets
+              password: "contactform-password" #! Need to replace these with Github secrets
             EOF
 
         - name: Deploy with Helm
@@ -97,13 +97,33 @@ jobs:
               --create-namespace \
               --set appimage=${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }} \
               --set apptag=${{ github.run_number }} \
-              --set mysql.rootPassword="Y29udGFjdGZvcm0tcm9vdHBhc3M=" \
-              --set mysql.user="Y29udGFjdGZvcm1kYi1hZG1pbg==" \
-              --set mysql.password="Y29udGFjdGZvcm0tcGFzc3dvcmQ=" \
-              --set pma.user="Y29udGFjdGZvcm1kYi1wbWFkbWlu" \
-              --set pma.password="Y29udGFjdGZvcm0tcGFzc3dvcmQ=" \
-              --timeout 10m \
-              --wait              
+              --set mysql.rootPassword="contactform-rootpass" \
+              --set mysql.user="contactformdb-admin" \
+              --set mysql.password="contactform-password" \
+              --set pma.user="contactformdb-pmadmin" \
+              --set pma.password="contactform-password" \
+              --timeout 15m \
+              # --wait
+
+            # Check what was created
+            echo "Checking deployed resources..."
+            kubectl get all -n default
+            kubectl get ingress -n default
+            kubectl get pvc -n default
+            
+            # Check pod status
+            echo "Checking pod details..."
+            kubectl describe pods -n default
+            
+            # Wait for deployment to be ready (with longer timeout)
+            echo "Waiting for deployments to be ready..."
+            kubectl wait --for=condition=available deployment --all -n default --timeout=900s || {
+              echo "Deployment not ready, checking pod logs..."
+              kubectl get pods -n default
+              kubectl logs -l app=php-app -n default --tail=50 || true
+              kubectl logs -l app=mysql-db -n default --tail=50 || true
+            }
+
           # uses: bitovi/github-actions-deploy-eks-helm@v1.2.12
           # with:
           #   aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
