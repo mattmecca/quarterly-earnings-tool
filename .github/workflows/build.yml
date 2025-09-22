@@ -447,4 +447,5 @@ jobs:
       # FINALLY, we execute `terraform destroy ...` command
       - name: Terraform destroy
         id: destroy
+        if: always()
         run: terraform destroy -auto-approve -input=false
